@@ -29,13 +29,13 @@ function scatter_style(xl,yl)
 end
 
 
-Nevents = 10
+Nevents = 20
 Ntime = 20 
 
-df = [readdlm("data/shearwave_1_$i.dat") for i in 0:Ntime]
+df = [readdlm("data/shearwave_1_$i.dat") for i in 1:Ntime]
 
-for id in 2:Nevents 
-    df .+= [readdlm("data/shearwave_$id"*"_$i.dat") for i in 0:Ntime]
+for id in 1:Nevents 
+    df .+= [readdlm("data/shearwave_$id"*"_$i.dat") for i in 1:Ntime]
 end 
 
 df .*= 1.0/Nevents 
@@ -44,8 +44,8 @@ df .*= 1.0/Nevents
 
 plot()
 
-for i in 0:Ntime-1 
-    plot!(df[i+1][2:end], label="t="*string(round(20*df[i+1][1],digits=3) ))
+for i in 1:Ntime 
+    plot!(df[i][2:end], label="t="*string(round(20*df[i][1],digits=3) ))
 end 
 
 scatter_style(L"y", L"\pi_x")

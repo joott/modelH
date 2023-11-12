@@ -25,10 +25,13 @@ const RIGHT = 1
 
 
 
+
 # """
 # Random seed is set by the first argument passed to Julia
 # """
-Random.seed!(parse(Int,ARGS[1]))
+
+ID = parse(Int,ARGS[1])
+Random.seed!(ID)
 
 
 
@@ -46,18 +49,19 @@ Random.seed!(parse(Int,ARGS[1]))
 #   10. 
 # """
 const L = parse(Int,ARGS[2])
+#L=8
 const λ = 4.0e0
 const Γ = 1.0e0
 const T = 1.0e0
 const ρ = 1.0e0
 
-const η = 0.1e0
+const η = 1.0e0
 
-const m² = -2.28587
+const m² =  -2.28587
 #const m² = -0.0e0
 const Δt = 0.04e0/Γ
 
-const Δtdet =  Δt
+const Δtdet =  Δt/30
 
 const Rate_phi = Float64(sqrt(2.0*Δt*Γ))
 const Rate_pi = Float64(sqrt(2.0*Δt*η))
@@ -115,6 +119,11 @@ function shifts(direction, component)
     (-direction*(1÷component), -direction*mod(2÷component,2), -direction*(component÷3))
 end
 
+function shifts2(direction, component)
+    # quite obscure set of operations to avoid ifs 
+    (-2*direction*(1÷component), -2*direction*mod(2÷component,2), -2*direction*(component÷3))
+end
+
 """
   Elementary stochastic step with the transfer of the momentum density (μ-th component) from the cell x1 to x2 
 """
@@ -148,8 +157,8 @@ end
 function ΔH_phi(x, ϕ, q, m²)
 	@inbounds ϕold = ϕ[x...]
 	ϕt = ϕold + q
-	#Δϕ = ϕt - ϕold
-	Δϕ = q
+	Δϕ = ϕt - ϕold
+	#Δϕ = q
 	Δϕ² = ϕt^2 - ϕold^2
 
   @inbounds ∑nn = ϕ[NNp(x[1]), x[2], x[3]] + ϕ[x[1], NNp(x[2]), x[3]] + ϕ[x[1], x[2], NNp(x[3])] + ϕ[NNm(x[1]), x[2], x[3]] + ϕ[x[1], NNm(x[2]), x[3]] + ϕ[x[1], x[2], NNm(x[3])]
@@ -211,131 +220,194 @@ function dissipative(ϕ, π, m²)
     end
 end
 
-function Δ(ϕ)
+
+"""
+Central differene Laplacian 
+"""
+function Δc(ϕ)
     dϕ = -6*ϕ
 
     for μ in 1:3
-        dϕ .+= circshift(ϕ, shifts(LEFT, μ)) 
-        dϕ .+= circshift(ϕ, shifts(RIGHT,μ)) 
+        dϕ .+= circshift(ϕ, shifts2(LEFT, μ)) 
+        dϕ .+= circshift(ϕ, shifts2(RIGHT,μ)) 
     end
+
+    dϕ .*= 0.25
 
     return dϕ
 end 
 
-function ∇(src, dest, direction, component) 
-    circshift!(dest, src, shifts(direction,component))
-    dest .= (dest .- src) * direction
+"""
+Central difference
+"""
+function ∇(src, dest, component) 
+    dest .= circshift(src, shifts(RIGHT,component)) 
+    dest .-= circshift(src, shifts(LEFT,component)) 
 
+    dest .*= 0.5 
     return 1 
 end
 
-function ∇conj(src, dest, direction, component) 
-    circshift!(dest, src, shifts(-direction,component))
-    dest .= (src .- dest) * direction
-
-    return 1 
-end
 
 """
-  Solve Poisson equation Δ ϕ' = ϕ, overwrites ϕ
+  Solve Central Poisson equation Δc ϕ' = ϕ, overwrites ϕ
 """
-function Poisson(ϕ)
+function Poissonc(ϕ)
     Afft = fft(ϕ)
-    for n1 in 1:L, n2 in 1:L, n3 in 1:L
-        k2 = 4* (sin(pi/L * (n1-1))^2 + sin(pi/L * (n2-1))^2 + sin(pi/L * (n3-1))^2)
-        @inbounds Afft[n1,n2,n3] = -Afft[n1,n2,n3] /  k2 
+    Threads.@threads for n3 in 1:L 
+      for n2 in 1:L, n1 in 1:L
+        k2 =  (sin(2*pi/L * (n1-1))^2 + sin(2*pi/L * (n2-1))^2 + sin(2*pi/L * (n3-1))^2)
+        if k2 > 1e-11
+           @inbounds Afft[n1,n2,n3] = -Afft[n1,n2,n3] /  k2 
+        else 
+           @inbounds Afft[n1,n2,n3] = 0.0 
+        end
+
+      end
     end
-    Afft[1,1,1] = 0.0 
+
     ϕ .= real.(ifft(Afft))
 end
 
 """
-  Projector 
+  Central Projector 
 """
-function project(π, direction)
+function project(π)
     # ∇_μ projectμ = 0 
 
     π_sum = zeros(Float64,(L,L,L))
     temp = zeros(Float64,(L,L,L,3))
 
     for μ in 1:3 
-        ∇(@view(π[:,:,:,μ]), @view(temp[:,:,:,μ]), direction, μ)
+        ∇(@view(π[:,:,:,μ]), @view(temp[:,:,:,μ]), μ)
         π_sum .-= temp[:,:,:,μ] # note that π_sum is actiually - π_sum
     end 
 
     Threads.@threads for μ in 1:3 
-        ∇conj(π_sum, @view(temp[:,:,:,μ]), direction, μ)
-        temp[:,:,:,μ] .+= Δ(@view(π[:,:,:,μ]))
-        Poisson(@view(temp[:,:,:,μ]))    
-    end 
+        ∇(π_sum, @view(temp[:,:,:,μ]), μ)
+        temp[:,:,:,μ] .+= Δc(@view(π[:,:,:,μ]))
+        Poissonc(@view(temp[:,:,:,μ]))    
+    end
+    # temp contains negative of the longit. part 
 
-    π .= temp
+    π[:,:,:,1:3] .= temp
 
     return 1
 end
 
-"""
 
-"""
-function maccormack(ϕ, π, direction)
-    project(π, direction)
+function deterministic_elementary_step(du, u)
+    ϕ = @view u[:,:,:,4]
+    
+    dϕ = @view du[:,:,:,4]
+
 
     # temporary arrays 
     dj = similar(ϕ)
-    dϕ = similar(ϕ)
-    dϕ_μ = similar(ϕ)
     dϕ_ν = similar(ϕ)
-    dπ = similar(π)
+    Laplacian = Δc(ϕ)
+    ππ = similar(ϕ)
 
-    dj .= 0.0
-    dϕ .= ϕ
-    dπ .= 0.0
-
+    dj .= 0.0 
     for μ in 1:3
-        ∇(π[:,:,:,μ] .* ϕ, dj, direction, μ)
-        dϕ .-= Δtdet *dj/ρ         
+        ∇(ϕ, dϕ, μ) # ∇_μ ϕ
+        dj .+= 1.0/ρ*dϕ.*u[:,:,:,μ]         
     end
 
-    dj .= 0.0
+    du[:,:,:,1:3] .= 0.0
+    dϕ .= -dj
+    #dϕ .= 0.0
 
     for ν in 1:3
-        ∇conj(ϕ, dϕ_ν, direction, ν)
+        ∇(ϕ, dϕ_ν, ν)
 
         for μ in 1:3
-            ∇conj(ϕ, dϕ_μ, direction, μ) 
-            dj .= 1.0/ρ * π[:,:,:,μ] .* π[:,:,:,ν] .+ dϕ_μ .* dϕ_ν
-            # overwrite dϕ_μ because it's not needed
-            ∇(dj, dϕ_μ, direction, μ)
-            dπ[:,:,:,ν] .-= Δtdet *dϕ_μ 
-        end
+            ππ .= u[:,:,:,ν].*u[:,:,:,μ]
+            ∇(ππ, dj, μ) # ∇_μ (π_ν π_μ)
+            du[:,:,:,ν] .-= 0.5*dj/ρ  # -1/2ρ ∇_μ π_μ π_ν
+            
+            ∇(@view(u[:,:,:,ν]), dj ,μ) # ∇_μ π_ν
 
-        dπ[:,:,:,ν] .+= π[:,:,:,ν] 
+            du[:,:,:,ν] .-= 0.5*dj.*u[:,:,:,μ]/ρ  # -1/2ρ π_μ ∇_μ π_ν
+        end
+        
+        du[:,:,:,ν] .-= dϕ_ν.*Laplacian 
+
     end
 
-    return (dϕ,dπ) # returns * or ** updates 
+    return 1 # returns * or ** updates 
 end
 
-"""
 
 """
-function maccormack_step(ϕ, π)
-    step1 = maccormack(ϕ, π, RIGHT)
-    step2 = maccormack(step1..., LEFT)
-    ϕ .= 0.5e0 * (ϕ .+ step2[1])
-    π .= 0.5e0 * (π .+ step2[2])
+Wray RK3 scheme
+"""
+function deterministic(u)
+    k1 = similar(u)   
+    k2 = similar(u)   
+    k3 = similar(u)   
+    
+    temp = similar(u)   
+
+    project(u)
+    deterministic_elementary_step(k1, u)
+    
+    temp .= u.+Δtdet*k1
+    project(temp)
+    deterministic_elementary_step(k2, temp)
+    
+
+    temp .= u .+ Δtdet*0.25*(k1 .+ k2)
+    project(temp)
+    deterministic_elementary_step(k3, temp)
+
+    u .+= Δtdet*(0.5*k1 .+ 0.5*k2 .+ 2.0*k3)/3.0  
+    project(u)
 end
 
+
+
 """
 
 """
-function thermalize(ϕ, π, m², N)
+function prethermalize(ϕ, π, m², N)
     for _ in 1:N
       if sum_check(ϕ) 
                break
       end
       dissipative(ϕ, π, m²)
-      maccormack_step(ϕ, π)
+      project(π)
+      dissipative(ϕ, π, m²)
+      project(π)
     end
+end
+
+
+"""
+
+"""
+function thermalize(u, m², N) 
+    ϕ = @view(u[:,:,:,4])
+    Π = @view(u[:,:,:,1:3])
+
+    for _ in 1:N
+      if sum_check(ϕ) 
+               break
+      end
+      #dissipative(ϕ, Π, m²)
+      
+      #project(Π)
+      #E1 = energy(ϕ, Π)
+      deterministic(u)
+      #project(Π)
+      #E2 = energy(ϕ, Π)
+      #print(E1/E2)
+      #print("\n")
+
+    end
+    project(Π)
+    print(energy(ϕ, Π))
+    print("\n")
 end
 
 """
@@ -347,59 +419,69 @@ function op(ϕ, L)
 	(real(average),ϕk[:,1,1])
 end
 
+
+function kinetic_energy(ϕ,π)
+    sum((3 * ϕ[x,y,z]^2 - ϕ[NNm(x),y,z] * ϕ[NNp(x),y,z] - ϕ[x,NNm(y),z] * ϕ[x,NNp(y),z] - ϕ[x,y,NNm(z)] * ϕ[x,y,NNp(z)])*0.25  for x in 1:L, y in 1:L, z in 1:L)/L^3
+end
+
+
+function energy(ϕ, π)
+    K = kinetic_energy(ϕ,π)
+    K + sum(0.5 * (π[x,y,z,1]^2 + π[x,y,z,2]^2 + π[x,y,z,3]^2  +  1/2 * m² * ϕ[x,y,z]^2 + λ * ϕ[x,y,z]^4 / 4  ) for x in 1:L, y in 1:L, z in 1:L)/L^3
+end
+
+
 """
 Main function, accepts no arguments; introduced to keep global scope tidier 
 """
 function run()
 
-  ϕ = hotstart(L)
-  Π = hotstart(L, 3)
+  u = hotstart(L,4)
+  ϕ = @view(u[:,:,:,4])
+  Π = @view(u[:,:,:,1:3])
 
   for μ in 1:3
     Π[:,:,:,μ] .= Π[:,:,:,μ] .- shuffle(Π[:,:,:,μ]);
   end
   
-  Π .= 0.0
+  let 
+    # sanity tests
+    project(Π)
+    PiTest = similar(Π)  
+    ∇(Π, PiTest,  1)
+    display(sum(PiTest))
+    PiTest .= Π  
+    project(Π)
+    project(Π)
+    project(Π)
+    display(sum(PiTest .- Π  ))
+    display( Π[1,1,1,1] )
+  end 
+  
 
   ϕ .= ϕ .- shuffle(ϕ)
   
+  Π .= 0.0
   ϕ .= 0.0
 
-  [@time thermalize(ϕ, Π, m², L^4) for i in 1:10]
+  [Π[:, y, :, 1] .= 20*sin(2π/L*(y-1)) for y in 1:L]
   
-  maxt = 10*L^4
-  skip = 10 
+  #[ϕ[i,j,k] = exp(-((i-L÷2)^2+(j-L÷2)^2+(k-L÷2)^2  )) for i in 1:L, j in 1:L, k in 1:L ] 
 
-  open("output_$L.dat","w") do io 
-  open("outputpi_$L.dat","w") do iopi 
-	  for i in 0:maxt
-		  
-      if sum_check(ϕ) 
-               break
-      end
+  maxt = 10^4
+  skip = 50 
 
-      (M,ϕk) = op(ϕ, L)
-		  Printf.@printf(io, "%i %f", i*skip, M)
-		  for kx in 1:L
-			  Printf.@printf(io, " %f %f", real(ϕk[kx]), imag(ϕk[kx]))
-		  end 
-		  Printf.@printf(io, "\n")
+  for it in 1:20
+    open("data/shearwave_$ID"*"_$it.dat","w") do io
+      Printf.@printf(io, "%f", it*Δt)
+      for i in 1:L
+        Printf.@printf(io, " %f", Π[L÷2, i, L÷2, 1])
+      end 
+      Printf.@printf(io, "\n")
       Printf.flush(io)
-      
-      (M,pik) = op(@view(Π[:,:,:,1]), L)
-		  Printf.@printf(iopi, "%i %f", i*skip, M)
-		  for kx in 1:L
-			  Printf.@printf(iopi, " %f %f", real(pik[kx]), imag(pik[kx]))
-		  end 
-		  Printf.@printf(iopi, "\n")
-      Printf.flush(iopi)
-
-		  thermalize(ϕ, Π, m², skip)
-      #display(i)
-	  end
-  end
-  end
-
+    end
+    thermalize(u, m², skip)
+  end 
 
 end
 

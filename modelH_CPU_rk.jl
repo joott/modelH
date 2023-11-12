@@ -54,7 +54,7 @@ const Γ = 1.0e0
 const T = 1.0e0
 const ρ = 1.0e0
 
-const η = 0.01e0
+const η = 0.1e0
 
 const m² =  -2.28587
 #const m² = -0.0e0
@@ -256,7 +256,7 @@ function Poissonc(ϕ)
     Threads.@threads for n3 in 1:L 
       for n2 in 1:L, n1 in 1:L
         k2 =  (sin(2*pi/L * (n1-1))^2 + sin(2*pi/L * (n2-1))^2 + sin(2*pi/L * (n3-1))^2)
-        if k2 > 1e-8
+        if k2 > 1e-11
            @inbounds Afft[n1,n2,n3] = -Afft[n1,n2,n3] /  k2 
         else 
            @inbounds Afft[n1,n2,n3] = 0.0 
@@ -287,7 +287,6 @@ function project(π)
         temp[:,:,:,μ] .+= Δc(@view(π[:,:,:,μ]))
         Poissonc(@view(temp[:,:,:,μ]))    
     end
-    # temp contains negative of the longit. part 
 
     π[:,:,:,1:3] .= temp
 
@@ -300,7 +299,6 @@ function deterministic_elementary_step(du, u)
     
     dϕ = @view du[:,:,:,4]
 
-    project(u)
 
     # temporary arrays 
     dj = similar(ϕ)
@@ -344,25 +342,23 @@ Wray RK3 scheme
 function deterministic(u)
     k1 = similar(u)   
     k2 = similar(u)   
+    k3 = similar(u)   
+    
     temp = similar(u)   
 
-    a21 = 8.0/15.0
-    a31 = 0.25 
-    a32 = 5.0/12.0
-
-    b1 = 0.25 
-    b3 = 0.75
-
+    project(u)
     deterministic_elementary_step(k1, u)
     
-    temp .= u.+Δtdet*a21*k1
-    deterministic_elementary_step(k2, temp)
-    
-
-    temp .= u .+ Δtdet*(a31*k1 .+ a32*k2)
+    temp .= u.+Δtdet*k1
+    project(temp)
     deterministic_elementary_step(k2, temp)
 
-    u .+= Δtdet*(b1*k1 .+ b3*k2)  
+    temp .= u .+ Δtdet*0.25*(k1 .+ k2)
+    project(temp)
+    deterministic_elementary_step(k3, temp)
+
+    u .+= Δtdet*(0.5*k1 .+ 0.5*k2 .+ 2.0*k3)/3.0  
+    project(u)
 end
 
 
@@ -382,6 +378,33 @@ function prethermalize(ϕ, π, m², N)
     end
 end
 
+
+"""
+
+"""
+function thermalize_en(u, m², N) 
+    ϕ = @view(u[:,:,:,4])
+    Π = @view(u[:,:,:,1:3])
+
+    for _ in 1:N
+      if sum_check(ϕ) 
+               break
+      end
+      dissipative(ϕ, Π, m²)
+      
+      project(Π)
+      E1 = energy(ϕ, Π)
+      deterministic(u)
+      project(Π)
+      E2 = energy(ϕ, Π)
+      print(E1/E2)
+      print("\n")
+
+    end
+    #project(Π)
+    #print(energy(ϕ, Π))
+    #print("\n")
+end
 
 """
 
@@ -419,9 +442,15 @@ function op(ϕ, L)
 	(real(average),ϕk[:,1,1])
 end
 
+
+function kinetic_energy(ϕ,π)
+    sum((3 * ϕ[x,y,z]^2 - ϕ[NNm(x),y,z] * ϕ[NNp(x),y,z] - ϕ[x,NNm(y),z] * ϕ[x,NNp(y),z] - ϕ[x,y,NNm(z)] * ϕ[x,y,NNp(z)])*0.25  for x in 1:L, y in 1:L, z in 1:L)/L^3
+end
+
+
 function energy(ϕ, π)
-    sum(3 * ϕ[x,y,z]^2 - ϕ[x,y,z] * (ϕ[NNp(x),y,z] + ϕ[x,NNp(y),z] + ϕ[x,y,NNp(z)]) + 1/2 * m² * ϕ[x,y,z]^2 + λ * ϕ[x,y,z]^4 / 4 + 1/2 * (π[x,y,z,1]^2 + π[x,y,z,2]^2 + π[x,y,z,3]^2) for x in 1:L, y in 1:L, z in 1:L)/L^3
-    #sum( 1/2 * (π[x,y,z,1]^2 + π[x,y,z,2]^2 + π[x,y,z,3]^2) for x in 1:L, y in 1:L, z in 1:L)
+    K = kinetic_energy(ϕ,π)
+    K + sum(0.5 * (π[x,y,z,1]^2 + π[x,y,z,2]^2 + π[x,y,z,3]^2  +  1/2 * m² * ϕ[x,y,z]^2 + λ * ϕ[x,y,z]^4 / 4  ) for x in 1:L, y in 1:L, z in 1:L)/L^3
 end
 
 
@@ -457,11 +486,16 @@ function run()
   ϕ .= ϕ .- shuffle(ϕ)
  
   #smoothen 
-  [@time prethermalize(ϕ, Π, m², L^2) for i in 1:20]
+  [@time prethermalize(ϕ, Π, m², L^3) for i in 1:L]
   
   #ϕ .= 0.0
+  
+  #Π .= 0.0e0
 
-  [@time thermalize(u, m², 1) for i in 1:50]
+  #[ϕ[i,j,k] = exp(-((i-L÷2)^2+(j-L÷2)^2+(k-L÷2)^2  )) for i in 1:L, j in 1:L, k in 1:L ] 
+
+  # energy conservation per deterministic step check 
+  [@time thermalize_en(u, m², 1) for i in 1:50]
 
   [@time thermalize(u, m², L^4) for i in 1:5]
   
