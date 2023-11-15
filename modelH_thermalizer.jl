@@ -100,7 +100,7 @@ end
 
 
 include("Dissipative.jl")
-include("Determinstic.jl")
+include("Deterministic.jl")
 
 """
 
