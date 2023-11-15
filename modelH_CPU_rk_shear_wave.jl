@@ -145,7 +145,7 @@ end
 """
 function pi_sweep(π, n, m, μ, (i,j,k))
     xyz = ((2i + m)%L+1, j%L+1, k%L+1)
-    @inbounds x1 = (xyz[n%3+1], xyz[(n+1)%3+1], xyz[(n+2)%3+1])
+    @inbounds x1 = (xyz[(3-n)%3+1], xyz[(4-n)%3+1], xyz[(5-n)%3+1])
     @inbounds x2 = ((x1[1]-(n!=0))%L+1, (x1[2]-(n!=1))%L+1, (x1[3]-(n!=2))%L+1)
 
     pi_step(π, μ, x1, x2)
@@ -186,7 +186,7 @@ end
 """
 function phi_sweep(m², ϕ, n, m, (i,j,k))
     xyz = ((4i + 2j + m%2)%L+1, (j + k + m÷2)%L+1, k%L+1)
-    @inbounds x1 = (xyz[n%3+1], xyz[(n+1)%3+1], xyz[(n+2)%3+1])
+    @inbounds x1 = (xyz[(3-n)%3+1], xyz[(4-n)%3+1], xyz[(5-n)%3+1])
     @inbounds x2 = ((x1[1]-(n!=0))%L+1, (x1[2]-(n!=1))%L+1, (x1[3]-(n!=2))%L+1)
 
     phi_step(m², ϕ, x1, x2)
