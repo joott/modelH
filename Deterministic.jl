@@ -127,10 +127,14 @@ function deterministic_elementary_step(du, u)
 
     du[:,:,:,1:3] .= 0.0
     dϕ .= -dj 
+    # dϕ .= 0.0
 
     for ν in 1:3
         ∇(ϕ, dϕ_ν, ν)
 
+        # ππ .= u[:,:,:,ν].*u[:,:,:,ν]
+        # ∇(ππ, dj, ν) # ∇_μ (π_ν π_μ)
+        # du[:,:,:,ν] .-= 0.5*dj/ρ  # -1/2ρ ∇_μ π_μ π_ν
         for μ in 1:3
             ππ .= u[:,:,:,ν].*u[:,:,:,μ]
             ∇(ππ, dj, μ) # ∇_μ (π_ν π_μ)
@@ -140,7 +144,7 @@ function deterministic_elementary_step(du, u)
 
             du[:,:,:,ν] .-= 0.5*dj.*u[:,:,:,μ]/ρ  # -1/2ρ π_μ ∇_μ π_ν
         end
-        
+
         du[:,:,:,ν] .-= dϕ_ν.*Laplacian 
 
     end
