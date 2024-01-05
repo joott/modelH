@@ -140,7 +140,7 @@ function deterministic_elementary_step(du, u)
 
             du[:,:,:,ν] .-= 0.5*dj.*u[:,:,:,μ]/ρ  # -1/2ρ π_μ ∇_μ π_ν
         end
-        
+
         du[:,:,:,ν] .-= dϕ_ν.*Laplacian 
 
     end
