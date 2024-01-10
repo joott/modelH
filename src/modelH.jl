@@ -17,32 +17,6 @@ using CUDA
 include("initialize.jl")
 include("simulation.jl")
 
-struct State
-    u::ArrayType
-    π::ArrayType
-    ϕ::ArrayType
-    State(u) = new(u, @view(u[:,:,:,1:3]), @view(u[:,:,:,4]))
-end
-
-"""
-    Hot start initializes system state such that `sum(component) = 0`
-"""
-function hotstart(n, n_components)
-	u = rand(ξ, n, n, n, n_components)
-
-    for i in 1:4
-        u[:,:,:,i] .-= shuffle(u[:,:,:,i])
-    end
-
-    State(ArrayType(u))
-end
-
-function make_temp_arrays(state)
-    (k1, k2, k3) = (similar(state.u), similar(state.u), similar(state.u))
-    rk_temp = State(similar(state.u))
-    fft_temp = ArrayType{ComplexType}(undef, (L,L,L,3))
-    (k1,k2,k3,rk_temp,fft_temp)
-end
 
 function kinetic_energy(ϕ)
     0.25 * sum(3 * ϕ.^2 - circshift(ϕ, (1,0,0)) .* circshift(ϕ, (-1,0,0))
@@ -54,4 +28,15 @@ function energy(state)
     K = kinetic_energy(state.ϕ)
     (π1, π2, π3) = view_tuple(state.π)
     K + sum(0.5 * (π1.^2 + π2.^2 + π3.^2 + 1/2 * m² * state.ϕ.^2 + λ/4 * state.ϕ.^2))
+end
+
+function make_temp_arrays(state)
+    (k1, k2, k3) = (similar(state.u), similar(state.u), similar(state.u))
+    rk_temp = State(similar(state.u))
+    fft_temp = ArrayType{ComplexType}(undef, (L,L,L,3))
+    (k1,k2,k3,rk_temp,fft_temp)
+end
+
+function save_state(filename, state, m²)
+    jldsave(filename, true; u=Array(state.u), m²=m²)
 end

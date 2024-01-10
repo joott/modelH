@@ -2,7 +2,9 @@ using ArgParse
 using Distributions
 using Random
 using CUDA
-using ParallelStencil
+using JLD2
+using CodecZlib
+# using ParallelStencil
 
 function parse_commandline()
     s = ArgParseSettings()
@@ -20,6 +22,9 @@ function parse_commandline()
             help = "seed for random number generation"
             arg_type = Int
             default = 0
+        "--init"
+            help = "path of .jld2 file with initial state"
+            arg_type = String
         "--fp64"
             help = "flag to use Float64 type rather than Float32"
             action = :store_true
@@ -75,5 +80,40 @@ if ID != 0
     Random.seed!(ID)
     CUDA.seed!(ID)
 end
+
+struct State
+    u::ArrayType
+    π::ArrayType
+    ϕ::ArrayType
+    State(u) = new(u, @view(u[:,:,:,1:3]), @view(u[:,:,:,4]))
+end
+
+function hotstart(n, n_components)
+	u = rand(ξ, n, n, n, n_components)
+
+    for i in 1:4
+        u[:,:,:,i] .-= shuffle(u[:,:,:,i])
+    end
+
+    State(ArrayType(u))
+end
+
+init_arg = parsed_args["init"]
+
+##
+if isnothing(init_arg)
+
+macro init_state() esc(:( state = hotstart(L, 4) )) end
+
+else
+
+macro init_state()
+    file = jldopen(init_arg, "r")
+    state = State(file["u"])
+    return esc(:( state = $state ))
+end
+
+end
+##
 
 @init_parallel_stencil(CUDA, FloatType, 3);
