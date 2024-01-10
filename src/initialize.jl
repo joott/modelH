@@ -23,6 +23,9 @@ function parse_commandline()
         "--fp64"
             help = "flag to use Float64 type rather than Float32"
             action = :store_true
+        "--H0"
+            help = "disable ππ term in deterministic step"
+            action = :store_true
         "size"
             help = "side length of lattice"
             arg_type = Int
@@ -46,10 +49,10 @@ end
 =#
 
 parsed_args = parse_commandline()
-fp64 = parsed_args["fp64"]
 
-const FloatType = fp64 ? Float64 : Float32
-const ComplexType = fp64 ? ComplexF64 : ComplexF32
+const H0 = parsed_args["H0"]
+const FloatType = parsed_args["fp64"] ? Float64 : Float32
+const ComplexType = complex(FloatType)
 const ArrayType = CuArray
 
 const λ = FloatType(4.0)

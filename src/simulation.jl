@@ -7,14 +7,6 @@ include("helpers.jl")
 const plans = (CUFFT.plan_fft(CuArray{FloatType}(undef,(L,L,L,3)), (1,2,3)),
                CUFFT.plan_ifft!(CuArray{ComplexType}(undef,(L,L,L,3)), (1,2,3)))
 
-function view_tuple(u)
-    if size(u, 4) == 3
-        return (@view(u[:,:,:,1]),@view(u[:,:,:,2]),@view(u[:,:,:,3]))
-    end
-
-    (@view(u[:,:,:,1]),@view(u[:,:,:,2]),@view(u[:,:,:,3]),@view(u[:,:,:,4]))
-end
-
 @parallel_indices (ix,iy,iz) function poisson_scaling(πfft)
     k1 = sin(2pi * (ix-1) / L)
     k2 = sin(2pi * (iy-1) / L)
@@ -38,9 +30,32 @@ end
 function project(π, temp)
     temp .= plans[1] * π
     @parallel (1:L, 1:L, 1:L) poisson_scaling(temp)
-    plans[2] * temp;
+    plans[2] * temp
     π .= real.(temp)
+
+    CUDA.reclaim()
 end
+
+##
+if H0
+@parallel function deterministic_elementary_step(
+        π1, π2, π3, ϕ,
+        dπ1, dπ2, dπ3, dϕ)
+
+    ### phi update
+    # π_μ ∇_μ ϕ
+    @all(dϕ) = -1.0/ρ * (@all(π1) * @d_xc(ϕ) + @all(π2) * @d_yc(ϕ) + @all(π3) * @d_zc(ϕ))
+
+    ### pi update
+    # ∇_μ ϕ ∇²ϕ
+    @all(dπ1) = -@d_xc(ϕ) * @d2_xyz(ϕ)
+    @all(dπ2) = -@d_yc(ϕ) * @d2_xyz(ϕ)
+    @all(dπ3) = -@d_zc(ϕ) * @d2_xyz(ϕ)
+
+    return
+end
+
+else
 
 @parallel function deterministic_elementary_step(
         π1, π2, π3, ϕ,
@@ -68,6 +83,9 @@ end
 
     return
 end
+
+end
+##
 
 function deterministic(state, k1, k2, k3, rk_state, fft_temp)
     project(state.π, fft_temp)
