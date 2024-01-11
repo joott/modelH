@@ -4,7 +4,7 @@ using Random
 using CUDA
 using JLD2
 using CodecZlib
-# using ParallelStencil
+using ParallelStencil
 
 function parse_commandline()
     s = ArgParseSettings()
