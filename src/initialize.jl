@@ -18,6 +18,10 @@ function parse_commandline()
             help = "size of time step"
             arg_type = Float64
             default = 0.04
+        "--rho"
+            help = "mass density parameter; defaults to 1.0"
+            arg_type = Float64
+            default = 1.0
         "--rng"
             help = "seed for random number generation"
             arg_type = Int
@@ -63,10 +67,10 @@ const ArrayType = CuArray
 const λ = FloatType(4.0)
 const Γ = FloatType(1.0)
 const T = FloatType(1.0)
-const ρ = FloatType(1.0)
 
 const L = parsed_args["size"]
 const η = FloatType(parsed_args["viscosity"])
+const ρ = FloatType(parsed_args["rho"])
 const m² = FloatType(-2.28587 + parsed_args["mass"])
 const Δt = FloatType(parsed_args["dt"]/Γ)
 

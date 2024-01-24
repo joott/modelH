@@ -38,54 +38,84 @@ end
 
 ##
 if H0
-@parallel function deterministic_elementary_step(
+  if NModC 
+    @parallel function deterministic_elementary_step(
         π1, π2, π3, ϕ,
         dπ1, dπ2, dπ3, dϕ)
 
-    ### phi update
-    # π_μ ∇_μ ϕ
-    @all(dϕ) = -1.0/ρ * (@all(π1) * @d_xc(ϕ) + @all(π2) * @d_yc(ϕ) + @all(π3) * @d_zc(ϕ))
+      return
+    end
+  else
+    @parallel function deterministic_elementary_step(
+        π1, π2, π3, ϕ,
+        dπ1, dπ2, dπ3, dϕ)
 
-    ### pi update
-    # ∇_μ ϕ ∇²ϕ
-    @all(dπ1) = -@d_xc(ϕ) * @d2_xyz(ϕ)
-    @all(dπ2) = -@d_yc(ϕ) * @d2_xyz(ϕ)
-    @all(dπ3) = -@d_zc(ϕ) * @d2_xyz(ϕ)
+      ### phi update
+      # π_μ ∇_μ ϕ
+      @all(dϕ) = -1.0/ρ * (@all(π1) * @d_xc(ϕ) + @all(π2) * @d_yc(ϕ) + @all(π3) * @d_zc(ϕ))
 
-    return
-end
+      ### pi update
+      # ∇_μ ϕ ∇²ϕ
+      @all(dπ1) = -@d_xc(ϕ) * @d2_xyz(ϕ)
+      @all(dπ2) = -@d_yc(ϕ) * @d2_xyz(ϕ)
+      @all(dπ3) = -@d_zc(ϕ) * @d2_xyz(ϕ)
 
+      return
+    end
+  end 
 else
-
-@parallel function deterministic_elementary_step(
+  if NModC 
+    @parallel function deterministic_elementary_step(
         π1, π2, π3, ϕ,
         dπ1, dπ2, dπ3, dϕ)
 
-    ### phi update
-    # π_μ ∇_μ ϕ
-    @all(dϕ) = -1.0/ρ * (@all(π1) * @d_xc(ϕ) + @all(π2) * @d_yc(ϕ) + @all(π3) * @d_zc(ϕ))
+      # π_ν ∇_ν π_μ
+      @all(dπ1) = @all(dπ1) - 0.5/ρ * (@all(π1) * @d_xc(π1) + @all(π2) * @d_yc(π1) + @all(π3) * @d_zc(π1))
+      @all(dπ2) = @all(dπ2) - 0.5/ρ * (@all(π1) * @d_xc(π2) + @all(π2) * @d_yc(π2) + @all(π3) * @d_zc(π2))
+      @all(dπ3) = @all(dπ3) - 0.5/ρ * (@all(π1) * @d_xc(π3) + @all(π2) * @d_yc(π3) + @all(π3) * @d_zc(π3))
 
-    ### pi update
-    # ∇_μ ϕ ∇²ϕ
-    @all(dπ1) = -@d_xc(ϕ) * @d2_xyz(ϕ)
-    @all(dπ2) = -@d_yc(ϕ) * @d2_xyz(ϕ)
-    @all(dπ3) = -@d_zc(ϕ) * @d2_xyz(ϕ)
+      # ∇_ν π_μ π_ν
+      @all(dπ1) = @all(dπ1) - 0.5/ρ * (@prd_d_xc(π1,π1) + @prd_d_yc(π1,π2) + @prd_d_zc(π1,π3))
+      @all(dπ2) = @all(dπ2) - 0.5/ρ * (@prd_d_xc(π2,π1) + @prd_d_yc(π2,π2) + @prd_d_zc(π2,π3))
+      @all(dπ3) = @all(dπ3) - 0.5/ρ * (@prd_d_xc(π3,π1) + @prd_d_yc(π3,π2) + @prd_d_zc(π3,π3))
 
-    # π_ν ∇_ν π_μ
-    @all(dπ1) = @all(dπ1) - 0.5/ρ * (@all(π1) * @d_xc(π1) + @all(π2) * @d_yc(π1) + @all(π3) * @d_zc(π1))
-    @all(dπ2) = @all(dπ2) - 0.5/ρ * (@all(π1) * @d_xc(π2) + @all(π2) * @d_yc(π2) + @all(π3) * @d_zc(π2))
-    @all(dπ3) = @all(dπ3) - 0.5/ρ * (@all(π1) * @d_xc(π3) + @all(π2) * @d_yc(π3) + @all(π3) * @d_zc(π3))
 
-    # ∇_ν π_μ π_ν
-    @all(dπ1) = @all(dπ1) - 0.5/ρ * (@prd_d_xc(π1,π1) + @prd_d_yc(π1,π2) + @prd_d_zc(π1,π3))
-    @all(dπ2) = @all(dπ2) - 0.5/ρ * (@prd_d_xc(π2,π1) + @prd_d_yc(π2,π2) + @prd_d_zc(π2,π3))
-    @all(dπ3) = @all(dπ3) - 0.5/ρ * (@prd_d_xc(π3,π1) + @prd_d_yc(π3,π2) + @prd_d_zc(π3,π3))
+      return
+    end
+  else 
+    @parallel function deterministic_elementary_step(
+        π1, π2, π3, ϕ,
+        dπ1, dπ2, dπ3, dϕ)
 
-    return
-end
+      ### phi update
+      # π_μ ∇_μ ϕ
+      @all(dϕ) = -1.0/ρ * (@all(π1) * @d_xc(ϕ) + @all(π2) * @d_yc(ϕ) + @all(π3) * @d_zc(ϕ))
+
+      ### pi update
+      # ∇_μ ϕ ∇²ϕ
+      @all(dπ1) = -@d_xc(ϕ) * @d2_xyz(ϕ)
+      @all(dπ2) = -@d_yc(ϕ) * @d2_xyz(ϕ)
+      @all(dπ3) = -@d_zc(ϕ) * @d2_xyz(ϕ)
+
+      # π_ν ∇_ν π_μ
+      @all(dπ1) = @all(dπ1) - 0.5/ρ * (@all(π1) * @d_xc(π1) + @all(π2) * @d_yc(π1) + @all(π3) * @d_zc(π1))
+      @all(dπ2) = @all(dπ2) - 0.5/ρ * (@all(π1) * @d_xc(π2) + @all(π2) * @d_yc(π2) + @all(π3) * @d_zc(π2))
+      @all(dπ3) = @all(dπ3) - 0.5/ρ * (@all(π1) * @d_xc(π3) + @all(π2) * @d_yc(π3) + @all(π3) * @d_zc(π3))
+
+      # ∇_ν π_μ π_ν
+      @all(dπ1) = @all(dπ1) - 0.5/ρ * (@prd_d_xc(π1,π1) + @prd_d_yc(π1,π2) + @prd_d_zc(π1,π3))
+      @all(dπ2) = @all(dπ2) - 0.5/ρ * (@prd_d_xc(π2,π1) + @prd_d_yc(π2,π2) + @prd_d_zc(π2,π3))
+      @all(dπ3) = @all(dπ3) - 0.5/ρ * (@prd_d_xc(π3,π1) + @prd_d_yc(π3,π2) + @prd_d_zc(π3,π3))
+
+      return
+    end 
+  end
 
 end
 ##
+#
+#
+
 
 function deterministic(state, k1, k2, k3, rk_state, fft_temp)
     project(state.π, fft_temp)
