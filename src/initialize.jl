@@ -35,6 +35,9 @@ function parse_commandline()
         "--H0"
             help = "disable ππ term in deterministic step"
             action = :store_true
+        "--NModC"
+            help = "disable π-phi coupling in pi-deterministic step"
+            action = :store_true
         "size"
             help = "side length of lattice"
             arg_type = Int
