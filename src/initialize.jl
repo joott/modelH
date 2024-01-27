@@ -63,6 +63,7 @@ end
 parsed_args = parse_commandline()
 
 const H0 = parsed_args["H0"]
+const NModC = parsed_args["NModC"]
 const FloatType = parsed_args["fp64"] ? Float64 : Float32
 const ComplexType = complex(FloatType)
 const ArrayType = CuArray
