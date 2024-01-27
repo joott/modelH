@@ -70,15 +70,14 @@ else
         dπ1, dπ2, dπ3, dϕ)
 
       # π_ν ∇_ν π_μ
-      @all(dπ1) = @all(dπ1) - 0.5/ρ * (@all(π1) * @d_xc(π1) + @all(π2) * @d_yc(π1) + @all(π3) * @d_zc(π1))
-      @all(dπ2) = @all(dπ2) - 0.5/ρ * (@all(π1) * @d_xc(π2) + @all(π2) * @d_yc(π2) + @all(π3) * @d_zc(π2))
-      @all(dπ3) = @all(dπ3) - 0.5/ρ * (@all(π1) * @d_xc(π3) + @all(π2) * @d_yc(π3) + @all(π3) * @d_zc(π3))
+      @all(dπ1) = -0.5/ρ * (@all(π1) * @d_xc(π1) + @all(π2) * @d_yc(π1) + @all(π3) * @d_zc(π1))
+      @all(dπ2) = -0.5/ρ * (@all(π1) * @d_xc(π2) + @all(π2) * @d_yc(π2) + @all(π3) * @d_zc(π2))
+      @all(dπ3) = -0.5/ρ * (@all(π1) * @d_xc(π3) + @all(π2) * @d_yc(π3) + @all(π3) * @d_zc(π3))
 
       # ∇_ν π_μ π_ν
       @all(dπ1) = @all(dπ1) - 0.5/ρ * (@prd_d_xc(π1,π1) + @prd_d_yc(π1,π2) + @prd_d_zc(π1,π3))
       @all(dπ2) = @all(dπ2) - 0.5/ρ * (@prd_d_xc(π2,π1) + @prd_d_yc(π2,π2) + @prd_d_zc(π2,π3))
       @all(dπ3) = @all(dπ3) - 0.5/ρ * (@prd_d_xc(π3,π1) + @prd_d_yc(π3,π2) + @prd_d_zc(π3,π3))
-
 
       return
     end
