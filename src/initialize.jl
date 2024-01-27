@@ -66,6 +66,7 @@ const H0 = parsed_args["H0"]
 const FloatType = parsed_args["fp64"] ? Float64 : Float32
 const ComplexType = complex(FloatType)
 const ArrayType = CuArray
+const SubArrayType = CuArray
 
 const λ = FloatType(4.0)
 const Γ = FloatType(1.0)
@@ -90,8 +91,8 @@ end
 
 struct State
     u::ArrayType
-    π::ArrayType
-    ϕ::ArrayType
+    π::SubArrayType
+    ϕ::SubArrayType
     State(u) = new(u, @view(u[:,:,:,1:3]), @view(u[:,:,:,4]))
 end
 
@@ -116,7 +117,7 @@ else
 
 macro init_state()
     file = jldopen(init_arg, "r")
-    state = State(file["u"])
+    state = State(ArrayType(file["u"]))
     return esc(:( state = $state ))
 end
 
