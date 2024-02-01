@@ -143,12 +143,12 @@ function pi_step(π, n, m, μ, (i,j,k))
     norm = cos(2pi*rand())*sqrt(-2.0*log(rand()))
     q = Rate_pi * norm
 
-    δH = (q * (π[x1..., μ] - π[x2..., μ]) + q^2)/ρ
-    P = min(1.0f0, exp(-δH))
+    @inbounds δH = (q * (π[x1..., μ] - π[x2..., μ]) + q^2)/ρ
+    P = exp(-δH)
     r = rand()
 
-    π[x1..., μ] += q * (r<P)
-    π[x2..., μ] -= q * (r<P)
+    @inbounds π[x1..., μ] += q * (r<P)
+    @inbounds π[x2..., μ] -= q * (r<P)
 end
 
 function _gpu_pi(π, n, m)
@@ -174,8 +174,8 @@ function ΔH_phi(ϕ, m², x, q)
     Δϕ = ϕt - ϕold
     Δϕ² = ϕt^2 - ϕold^2
 
-    ∑nn = ϕ[NNp(x[1]), x[2], x[3]] + ϕ[x[1], NNp(x[2]), x[3]] + ϕ[x[1], x[2], NNp(x[3])]
-        + ϕ[NNm(x[1]), x[2], x[3]] + ϕ[x[1], NNm(x[2]), x[3]] + ϕ[x[1], x[2], NNm(x[3])]
+    @inbounds ∑nn = (ϕ[NNp(x[1]), x[2], x[3]] + ϕ[x[1], NNp(x[2]), x[3]] + ϕ[x[1], x[2], NNp(x[3])]
+        + ϕ[NNm(x[1]), x[2], x[3]] + ϕ[x[1], NNm(x[2]), x[3]] + ϕ[x[1], x[2], NNm(x[3])])
 
     return 3Δϕ² - Δϕ * ∑nn + 0.5m² * Δϕ² + 0.25λ * (ϕt^4 - ϕold^4)
 end
@@ -189,11 +189,11 @@ function phi_step(ϕ, m², n, m, (i,j,k))
     q = Rate_phi * norm
 
     δH = ΔH_phi(ϕ, m², x1, q) + ΔH_phi(ϕ, m², x2, -q) + q^2
-    P = min(1.0f0, exp(-δH))
+    P = exp(-δH)
     r = rand()
 
-    ϕ[x1...] += q * (r<P)
-    ϕ[x2...] -= q * (r<P)
+    @inbounds ϕ[x1...] += q * (r<P)
+    @inbounds ϕ[x2...] -= q * (r<P)
 end
 
 function _gpu_phi(ϕ, m², n, m)
@@ -209,8 +209,8 @@ function _gpu_phi(ϕ, m², n, m)
     end
 end
 
-gpu_phi = @cuda launch=false _gpu_phi(CuArray{FloatType}(undef,(L,L,L)), zero(FloatType), 0, 0)
-gpu_pi  = @cuda launch=false _gpu_pi(CuArray{FloatType}(undef,(L,L,L,3)), 0, 0)
+gpu_phi = @cuda fastmath=true launch=false _gpu_phi(CuArray{FloatType}(undef,(L,L,L)), zero(FloatType), 0, 0)
+gpu_pi  = @cuda fastmath=true launch=false _gpu_pi(CuArray{FloatType}(undef,(L,L,L,3)), 0, 0)
 
 const N_phi = L^3÷4
 config = launch_configuration(gpu_phi.fun)
