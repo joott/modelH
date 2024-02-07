@@ -1,7 +1,6 @@
 using ArgParse
 using Distributions
 using Random
-using CUDA
 using JLD2
 using CodecZlib
 using ParallelStencil
@@ -31,6 +30,9 @@ function parse_commandline()
             arg_type = String
         "--fp64"
             help = "flag to use Float64 type rather than Float32"
+            action = :store_true
+        "--cpu"
+            help = "parallelize on CPU rather than GPU"
             action = :store_true
         "--H0"
             help = "disable ππ term in deterministic step"
@@ -62,12 +64,15 @@ end
 
 parsed_args = parse_commandline()
 
+const cpu = parsed_args["cpu"]
+!cpu && using CUDA
+
 const H0 = parsed_args["H0"]
 const NModC = parsed_args["NModC"]
 const FloatType = parsed_args["fp64"] ? Float64 : Float32
 const ComplexType = complex(FloatType)
-const ArrayType = CuArray
-const SubArrayType = CuArray
+const ArrayType = cpu ? Array : CuArray
+const SubArrayType = cpu ? SubArray : CuArray
 
 const λ = FloatType(4.0)
 const Γ = FloatType(1.0)
@@ -84,10 +89,10 @@ const Rate_phi = FloatType(sqrt(2.0*Δt*Γ))
 const Rate_pi  = FloatType(sqrt(2.0*Δt*η))
 const ξ = Normal(FloatType(0.0), FloatType(1.0))
 
-const ID = parsed_args["rng"]
-if ID != 0
-    Random.seed!(ID)
-    CUDA.seed!(ID)
+const seed = parsed_args["rng"]
+if seed != 0
+    Random.seed!(seed)
+    !cpu && CUDA.seed!(seed)
 end
 
 struct State
@@ -125,4 +130,14 @@ end
 end
 ##
 
+##
+@static if cpu
+
+@init_parallel_stencil(Threads, FloatType, 3);
+
+else
+
 @init_parallel_stencil(CUDA, FloatType, 3);
+
+end
+##

@@ -1,11 +1,16 @@
 using ParallelStencil
 using ParallelStencil.FiniteDifferences3D
-using CUDA
+
+if cpu
+    using FFTW
+else
+    using CUDA.CUFFT
+end
 
 include("helpers.jl")
 
-const plans = (CUFFT.plan_fft(CuArray{FloatType}(undef,(L,L,L,3)), (1,2,3)),
-               CUFFT.plan_ifft!(CuArray{ComplexType}(undef,(L,L,L,3)), (1,2,3)))
+const plans = (plan_fft(ArrayType{FloatType}(undef,(L,L,L,3)), (1,2,3)),
+               plan_ifft!(ArrayType{ComplexType}(undef,(L,L,L,3)), (1,2,3)))
 
 @parallel_indices (ix,iy,iz) function poisson_scaling(πfft)
     k1 = sin(2pi * (ix-1) / L)
@@ -33,12 +38,12 @@ function project(π, temp)
     plans[2] * temp
     π .= real.(temp)
 
-    CUDA.reclaim()
+    !cpu && CUDA.reclaim()
 end
 
 ##
-if H0
-  if NModC 
+@static if H0
+  @static if NModC 
     @parallel function deterministic_elementary_step(
         π1, π2, π3, ϕ,
         dπ1, dπ2, dπ3, dϕ)
@@ -64,7 +69,7 @@ if H0
     end
   end 
 else
-  if NModC 
+  @static if NModC 
     @parallel function deterministic_elementary_step(
         π1, π2, π3, ϕ,
         dπ1, dπ2, dπ3, dϕ)
@@ -143,26 +148,12 @@ function pi_step(π, n, m, μ, (i,j,k))
     norm = cos(2pi*rand())*sqrt(-2.0*log(rand()))
     q = Rate_pi * norm
 
-    @inbounds δH = (q * (π[x1..., μ] - π[x2..., μ]) + q^2)/ρ
+    δH = (q * (π[x1..., μ] - π[x2..., μ]) + q^2)/ρ
     P = exp(-δH)
     r = rand()
 
-    @inbounds π[x1..., μ] += q * (r<P)
-    @inbounds π[x2..., μ] -= q * (r<P)
-end
-
-function _gpu_pi(π, n, m)
-    index = (blockIdx().x - 1) * blockDim().x + threadIdx().x - 1
-    stride = gridDim().x * blockDim().x
-
-    for l in index:stride:3*L^3÷2-1
-        μ = l ÷ (L^3÷2) + 1
-        i = (l ÷ L^2) % (L ÷ 2)
-        j = (l ÷ L) % L
-        k = l % L
-
-        pi_step(π, n, m, μ, (i,j,k))
-    end
+    π[x1..., μ] += q * (r<P)
+    π[x2..., μ] -= q * (r<P)
 end
 
 """
@@ -174,8 +165,8 @@ function ΔH_phi(ϕ, m², x, q)
     Δϕ = ϕt - ϕold
     Δϕ² = ϕt^2 - ϕold^2
 
-    @inbounds ∑nn = (ϕ[NNp(x[1]), x[2], x[3]] + ϕ[x[1], NNp(x[2]), x[3]] + ϕ[x[1], x[2], NNp(x[3])]
-        + ϕ[NNm(x[1]), x[2], x[3]] + ϕ[x[1], NNm(x[2]), x[3]] + ϕ[x[1], x[2], NNm(x[3])])
+    ∑nn = (ϕ[NNp(x[1]), x[2], x[3]] + ϕ[x[1], NNp(x[2]), x[3]] + ϕ[x[1], x[2], NNp(x[3])]
+         + ϕ[NNm(x[1]), x[2], x[3]] + ϕ[x[1], NNm(x[2]), x[3]] + ϕ[x[1], x[2], NNm(x[3])])
 
     return 3Δϕ² - Δϕ * ∑nn + 0.5m² * Δϕ² + 0.25λ * (ϕt^4 - ϕold^4)
 end
@@ -192,11 +183,51 @@ function phi_step(ϕ, m², n, m, (i,j,k))
     P = exp(-δH)
     r = rand()
 
-    @inbounds ϕ[x1...] += q * (r<P)
-    @inbounds ϕ[x2...] -= q * (r<P)
+    ϕ[x1...] += q * (r<P)
+    ϕ[x2...] -= q * (r<P)
 end
 
-function _gpu_phi(ϕ, m², n, m)
+##
+@static if cpu
+
+function pi_sweep(π, n, m)
+    Threads.@threads for l in 0:3*L^3÷2-1
+        μ = l ÷ (L^3÷2) + 1
+        i = (l ÷ L^2) % (L ÷ 2)
+        j = (l ÷ L) % L
+        k = l % L
+
+        pi_step(π, n, m, μ, (i,j,k))
+    end
+end
+
+function phi_sweep(ϕ, m², n, m)
+    Threads.@threads for l in 0:L^3÷4-1
+        i = l ÷ L^2
+        j = (l ÷ L) % L
+        k = l % L
+
+        phi_step(ϕ, m², n, m, (i,j,k))
+    end
+end
+
+else
+
+function _pi_sweep(π, n, m)
+    index = (blockIdx().x - 1) * blockDim().x + threadIdx().x - 1
+    stride = gridDim().x * blockDim().x
+
+    for l in index:stride:3*L^3÷2-1
+        μ = l ÷ (L^3÷2) + 1
+        i = (l ÷ L^2) % (L ÷ 2)
+        j = (l ÷ L) % L
+        k = l % L
+
+        pi_step(π, n, m, μ, (i,j,k))
+    end
+end
+
+function _phi_sweep(ϕ, m², n, m)
     index = (blockIdx().x - 1) * blockDim().x + threadIdx().x - 1
     stride = gridDim().x * blockDim().x
 
@@ -209,28 +240,34 @@ function _gpu_phi(ϕ, m², n, m)
     end
 end
 
-gpu_phi = @cuda fastmath=true launch=false _gpu_phi(CuArray{FloatType}(undef,(L,L,L)), zero(FloatType), 0, 0)
-gpu_pi  = @cuda fastmath=true launch=false _gpu_pi(CuArray{FloatType}(undef,(L,L,L,3)), 0, 0)
+_pi_sweep_temp  = @cuda launch=false _pi_sweep(CuArray{FloatType}(undef,(L,L,L,3)), 0, 0)
+_phi_sweep_temp = @cuda launch=false _phi_sweep(CuArray{FloatType}(undef,(L,L,L)), zero(FloatType), 0, 0)
+
+const N_pi = L^3÷2
+config = launch_configuration(_pi_sweep_temp.fun)
+const threads_pi = min(N_pi, config.threads)
+const blocks_pi = cld(N_pi, threads_pi)
 
 const N_phi = L^3÷4
-config = launch_configuration(gpu_phi.fun)
+config = launch_configuration(_phi_sweep_temp.fun)
 const threads_phi = min(N_phi, config.threads)
 const blocks_phi = cld(N_phi, threads_phi)
 
-const N_pi = L^3÷2
-config = launch_configuration(gpu_pi.fun)
-const threads_pi = min(N_pi, config.threads)
-const blocks_pi = cld(N_pi, threads_pi)
+pi_sweep  = (π, n, m) -> _pi_sweep_temp(π, n, m; threads=threads_pi, blocks=blocks_pi)
+phi_sweep = (ϕ, m², n, m) -> _phi_sweep_temp(ϕ, m², n, m; threads=threads_phi, blocks=blocks_phi)
+
+end
+##
 
 function dissipative(state, m²)
     # pi update
     for n in 0:2, m in 0:1
-        gpu_pi(state.π, n, m; threads=threads_pi, blocks=blocks_pi)
+        pi_sweep(state.π, n, m)
     end
 
     # phi update
     for n in 0:2, m in 0:3
-        gpu_phi(state.ϕ, m², n, m; threads=threads_phi, blocks=blocks_phi)
+        phi_sweep(state.ϕ, m², n, m)
     end
 end
 

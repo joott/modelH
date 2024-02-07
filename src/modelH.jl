@@ -12,11 +12,9 @@ YP  YP  YP  `Y88P'  Y8888D' Y88888P Y88888P      YP   YP
 using Distributions
 using Printf
 using Random
-using CUDA
 
 include("initialize.jl")
 include("simulation.jl")
-
 
 function kinetic_energy(ϕ)
     0.25 * sum(3 * ϕ.^2 - circshift(ϕ, (1,0,0)) .* circshift(ϕ, (-1,0,0))
