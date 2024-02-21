@@ -35,6 +35,10 @@ function make_temp_arrays(state)
     (k1,k2,k3,rk_temp,fft_temp)
 end
 
-function save_state(filename, state, m²)
-    jldsave(filename, true; u=Array(state.u), m²=m²)
+function save_state(filename, state, m², i=nothing)
+    if isnothing(i)
+        jldsave(filename, true; u=Array(state.u), m²=m²)
+    else
+        jldsave(filename, true; u=Array(state.u), m²=m², i=i)
+    end
 end
